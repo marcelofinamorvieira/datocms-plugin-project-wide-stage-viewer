@@ -1,0 +1,142 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+.section {
+  display: block;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-m);
+  margin-bottom: var(--spacing-m);
+}
+
+.headerMain {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-m);
+}
+
+.summary {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--light-body-color);
+}
+
+.filterControl {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.875rem;
+  color: var(--light-body-color);
+}
+
+.filterLabel {
+  font-weight: 600;
+}
+
+.select {
+  min-width: 180px;
+  padding: calc(var(--spacing-xs) * 1.5) var(--spacing-s);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--base-background-color);
+  color: var(--base-body-color);
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 1px var(--accent-color);
+}
+
+.select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sortButton:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.sortIndicator {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  margin-left: var(--spacing-xs);
+}
+
+.sortAsc {
+  border-bottom: 6px solid var(--base-body-color);
+}
+
+.sortDesc {
+  border-top: 6px solid var(--base-body-color);
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-s);
+  color: var(--light-body-color);
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: var(--spacing-s);
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.table th {
+  font-weight: 600;
+  color: var(--base-body-color);
+}
+
+.table tr:last-of-type td {
+  border-bottom: none;
+}
+
+.recordId {
+  font-family: var(--monospace-font-family, Menlo, Consolas, 'Liberation Mono', monospace);
+}
+
+.empty {
+  color: var(--light-body-color);
+  margin: 0;
+}
+
+.error {
+  color: var(--alert-color);
+}
