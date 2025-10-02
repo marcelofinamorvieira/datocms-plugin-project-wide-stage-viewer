@@ -1,6 +1,6 @@
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, KeyboardEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type { RenderPageCtx } from 'datocms-plugin-sdk';
-import { Button, Canvas, Section, Spinner } from 'datocms-react-ui';
+import { Button, Canvas, Spinner } from 'datocms-react-ui';
 import { buildCmaClient } from '../utils/cma';
 import type { StageMenuItem } from '../types';
 import s from './StagePage.module.css';
@@ -211,6 +211,7 @@ export default function StagePage({ ctx, menuItem }: Props) {
   const [reloadIndex, setReloadIndex] = useState(0);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [sortState, setSortState] = useState<{ key: SortKey; direction: SortDirection }>({
     key: 'updatedAt',
     direction: 'desc',
@@ -462,12 +463,22 @@ export default function StagePage({ ctx, menuItem }: Props) {
   );
 
   const filteredRows = useMemo(() => {
-    if (!selectedModelId) {
-      return rows;
-    }
+    const query = searchTerm.trim().toLowerCase();
 
-    return rows.filter((row) => row.itemTypeId === selectedModelId);
-  }, [rows, selectedModelId]);
+    return rows.filter((row) => {
+      const matchesModel = selectedModelId ? row.itemTypeId === selectedModelId : true;
+      if (!matchesModel) {
+        return false;
+      }
+
+      if (query === '') {
+        return true;
+      }
+
+      const haystack = `${row.title} ${row.id} ${row.modelName}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [rows, searchTerm, selectedModelId]);
 
   const sortedRows = useMemo(() => {
     const sorted = [...filteredRows];
@@ -500,8 +511,62 @@ export default function StagePage({ ctx, menuItem }: Props) {
     return sorted;
   }, [filteredRows, sortState]);
 
-  const emptyStateMessage =
-    rows.length === 0 ? infoMessage ?? 'No records found.' : 'No records match the selected model.';
+  const emptyStateMessage = useMemo(() => {
+    if (rows.length === 0) {
+      return infoMessage ?? 'No records found in this stage yet.';
+    }
+
+    if (filteredRows.length === 0) {
+      if (searchTerm.trim() !== '') {
+        return 'No records match your search.';
+      }
+      if (selectedModelId) {
+        return 'No records match the selected model.';
+      }
+      return 'No records match your filters.';
+    }
+
+    return 'No records available.';
+  }, [filteredRows.length, infoMessage, rows.length, searchTerm, selectedModelId]);
+
+  const uniqueModelCount = useMemo(() => {
+    return new Set(rows.map((row) => row.modelName)).size;
+  }, [rows]);
+
+  const latestUpdatedAt = useMemo(() => {
+    let latest: string | null = null;
+
+    for (const row of rows) {
+      if (!row.updatedAt) {
+        continue;
+      }
+
+      const rowTime = new Date(row.updatedAt).getTime();
+      if (!Number.isFinite(rowTime)) {
+        continue;
+      }
+
+      if (!latest) {
+        latest = row.updatedAt;
+        continue;
+      }
+
+      const latestTime = new Date(latest).getTime();
+      if (rowTime > latestTime) {
+        latest = row.updatedAt;
+      }
+    }
+
+    return latest;
+  }, [rows]);
+
+  const handleSearchChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(event.target.value);
+  }, []);
+
+  const handleClearSearch = useCallback(() => {
+    setSearchTerm('');
+  }, []);
 
   const handleModelFilterChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
     const nextValue = event.target.value.trim();
@@ -520,177 +585,233 @@ export default function StagePage({ ctx, menuItem }: Props) {
     });
   }, []);
 
+  const handleRowKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTableRowElement>, itemTypeId: string, itemId: string) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        handleNavigate(itemTypeId, itemId);
+      }
+    },
+    [handleNavigate],
+  );
+
   if (!menuItem) {
     return (
       <Canvas ctx={ctx}>
-        <div className={s.container}>
-          <Section title="Stage view unavailable">
+        <div className={s.page}>
+          <div className={s.tableCard}>
             <p className={s.error}>
               This page no longer matches a saved workflow stage menu item. Please remove it from the
               plugin configuration.
             </p>
-          </Section>
+          </div>
         </div>
       </Canvas>
     );
   }
 
+  const latestUpdatedDisplay = formatTimestamp(latestUpdatedAt);
+  const totalRecords = rows.length;
+  const visibleRecords = filteredRows.length;
+
   return (
     <Canvas ctx={ctx}>
-      <div className={s.container}>
-        <div className={s.section}>
-          <Section title={menuItem.label ?? `${menuItem.stageName} (${menuItem.workflowName})`}>
-            <div className={s.headerRow}>
-              <div className={s.headerMain}>
-                <p className={s.summary}>
-                  Showing records currently in the <strong>{menuItem.stageName}</strong> stage of the{' '}
-                  <strong>{menuItem.workflowName}</strong> workflow.
-                </p>
-                {modelOptions.length > 0 ? (
-                  <label className={s.filterControl}>
-                    <span className={s.filterLabel}>Model</span>
-                    <select
-                      className={s.select}
-                      value={selectedModelId ?? ''}
-                      onChange={handleModelFilterChange}
-                    >
-                      <option value="">All models</option>
-                      {modelOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-              </div>
-              <Button buttonType="muted" buttonSize="s" onClick={() => setReloadIndex((value) => value + 1)}>
-                Refresh
-              </Button>
+      <div className={s.page}>
+        <div className={s.heroCard}>
+          <div className={s.heroHeading}>
+            <span className={s.heroEyebrow}>{menuItem.workflowName}</span>
+            <h1 className={s.heroTitle}>{menuItem.stageName}</h1>
+            <p className={s.heroDescription}>
+              {menuItem.label ? `${menuItem.label} · ` : ''}
+              Showing records currently sitting in this workflow stage.
+            </p>
+          </div>
+          <div className={s.metricGrid}>
+            <div className={s.metricCard}>
+              <span className={s.metricLabel}>Total In Stage</span>
+              <span className={s.metricValue}>{totalRecords}</span>
             </div>
-            {error ? <p className={s.error}>{error}</p> : null}
-            {isLoading ? (
-              <div className={s.loading}>
-                <Spinner />
-                <span>Loading records...</span>
-              </div>
-            ) : sortedRows.length > 0 ? (
-              <div className={s.tableWrapper}>
-                <table className={s.table}>
-                  <thead>
-                    <tr>
-                      <th
-                        scope="col"
-                        aria-sort={sortState.key === 'title' ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
-                      >
-                        <button type="button" className={s.sortButton} onClick={() => handleSort('title')}>
-                          <span>Title</span>
-                          <span
-                            className={`${s.sortIndicator} ${
-                              sortState.key === 'title'
-                                ? sortState.direction === 'asc'
-                                  ? s.sortAsc
-                                  : s.sortDesc
-                                : ''
-                            }`}
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </th>
-                      <th
-                        scope="col"
-                        aria-sort={sortState.key === 'id' ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
-                      >
-                        <button type="button" className={s.sortButton} onClick={() => handleSort('id')}>
-                          <span>Record ID</span>
-                          <span
-                            className={`${s.sortIndicator} ${
-                              sortState.key === 'id'
-                                ? sortState.direction === 'asc'
-                                  ? s.sortAsc
-                                  : s.sortDesc
-                                : ''
-                            }`}
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </th>
-                      <th
-                        scope="col"
-                        aria-sort={
-                          sortState.key === 'modelName'
-                            ? sortState.direction === 'asc'
-                              ? 'ascending'
-                              : 'descending'
-                            : 'none'
-                        }
-                      >
-                        <button type="button" className={s.sortButton} onClick={() => handleSort('modelName')}>
-                          <span>Model</span>
-                          <span
-                            className={`${s.sortIndicator} ${
-                              sortState.key === 'modelName'
-                                ? sortState.direction === 'asc'
-                                  ? s.sortAsc
-                                  : s.sortDesc
-                                : ''
-                            }`}
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </th>
-                      <th
-                        scope="col"
-                        aria-sort={
-                          sortState.key === 'updatedAt'
-                            ? sortState.direction === 'asc'
-                              ? 'ascending'
-                              : 'descending'
-                            : 'none'
-                        }
-                      >
-                        <button type="button" className={s.sortButton} onClick={() => handleSort('updatedAt')}>
-                          <span>Updated</span>
-                          <span
-                            className={`${s.sortIndicator} ${
-                              sortState.key === 'updatedAt'
-                                ? sortState.direction === 'asc'
-                                  ? s.sortAsc
-                                  : s.sortDesc
-                                : ''
-                            }`}
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </th>
-                      <th scope="col">Open</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedRows.map((row) => (
-                      <tr key={row.id}>
-                        <td>{row.title}</td>
-                        <td className={s.recordId}>{row.id}</td>
-                        <td>{row.modelName}</td>
-                        <td>{formatTimestamp(row.updatedAt)}</td>
-                        <td>
-                          <Button
-                            buttonType="primary"
-                            buttonSize="s"
-                            onClick={() => handleNavigate(row.itemTypeId, row.id)}
-                          >
-                            Open
-                          </Button>
-                        </td>
-                      </tr>
+            <div className={s.metricCard}>
+              <span className={s.metricLabel}>Visible Now</span>
+              <span className={s.metricValue}>{visibleRecords}</span>
+            </div>
+            <div className={s.metricCard}>
+              <span className={s.metricLabel}>Models</span>
+              <span className={s.metricValue}>{uniqueModelCount}</span>
+            </div>
+            <div className={s.metricCard}>
+              <span className={s.metricLabel}>Latest Update</span>
+              <span className={s.metricValueSecondary}>{latestUpdatedDisplay}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className={s.tableCard}>
+          <div className={s.toolbar}>
+            <div className={s.filters}>
+              {modelOptions.length > 0 ? (
+                <label className={s.filterField}>
+                  <span className={s.filterLabel}>Model</span>
+                  <select
+                    className={s.select}
+                    value={selectedModelId ?? ''}
+                    onChange={handleModelFilterChange}
+                  >
+                    <option value="">All models</option>
+                    {modelOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className={s.empty}>{emptyStateMessage}</p>
-            )}
-          </Section>
+                  </select>
+                </label>
+              ) : null}
+
+              <label className={s.filterField}>
+                <span className={s.filterLabel}>Search</span>
+                <div className={s.searchWrapper}>
+                  <input
+                    type="search"
+                    className={s.searchInput}
+                    value={searchTerm}
+                    onChange={handleSearchChange}
+                    placeholder="Search titles, IDs, models"
+                    aria-label="Search records"
+                  />
+                  {searchTerm ? (
+                    <button type="button" className={s.clearButton} onClick={handleClearSearch}>
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+            </div>
+
+            <Button buttonType="muted" buttonSize="s" onClick={() => setReloadIndex((value) => value + 1)}>
+              Refresh
+            </Button>
+          </div>
+
+          {error ? <p className={s.error}>{error}</p> : null}
+
+          {isLoading ? (
+            <div className={s.loading} role="status" aria-label="Loading records">
+              <Spinner size={72} placement="centered" style={{ transform: 'translate(-50%, -50%)' }} />
+            </div>
+          ) : sortedRows.length > 0 ? (
+            <div className={s.tableWrapper}>
+              <table className={s.table}>
+                <thead>
+                  <tr>
+                    <th
+                      scope="col"
+                      aria-sort={sortState.key === 'title' ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    >
+                      <button type="button" className={s.sortButton} onClick={() => handleSort('title')}>
+                        <span>Title</span>
+                        <span
+                          className={`${s.sortIndicator} ${
+                            sortState.key === 'title'
+                              ? sortState.direction === 'asc'
+                                ? s.sortAsc
+                                : s.sortDesc
+                              : ''
+                          }`}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </th>
+                    <th
+                      scope="col"
+                      aria-sort={sortState.key === 'id' ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    >
+                      <button type="button" className={s.sortButton} onClick={() => handleSort('id')}>
+                        <span>Record ID</span>
+                        <span
+                          className={`${s.sortIndicator} ${
+                            sortState.key === 'id'
+                              ? sortState.direction === 'asc'
+                                ? s.sortAsc
+                                : s.sortDesc
+                              : ''
+                          }`}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </th>
+                    <th
+                      scope="col"
+                      aria-sort={
+                        sortState.key === 'modelName'
+                          ? sortState.direction === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                      }
+                    >
+                      <button type="button" className={s.sortButton} onClick={() => handleSort('modelName')}>
+                        <span>Model</span>
+                        <span
+                          className={`${s.sortIndicator} ${
+                            sortState.key === 'modelName'
+                              ? sortState.direction === 'asc'
+                                ? s.sortAsc
+                                : s.sortDesc
+                              : ''
+                          }`}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </th>
+                    <th
+                      scope="col"
+                      aria-sort={
+                        sortState.key === 'updatedAt'
+                          ? sortState.direction === 'asc'
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                      }
+                    >
+                      <button type="button" className={s.sortButton} onClick={() => handleSort('updatedAt')}>
+                        <span>Updated</span>
+                        <span
+                          className={`${s.sortIndicator} ${
+                            sortState.key === 'updatedAt'
+                              ? sortState.direction === 'asc'
+                                ? s.sortAsc
+                                : s.sortDesc
+                              : ''
+                          }`}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className={s.bodyRow}
+                      role="link"
+                      tabIndex={0}
+                      aria-label={`Open ${row.title}`}
+                      onClick={() => handleNavigate(row.itemTypeId, row.id)}
+                      onKeyDown={(event) => handleRowKeyDown(event, row.itemTypeId, row.id)}
+                    >
+                      <td className={s.titleCell}>{row.title}</td>
+                      <td className={s.recordId}>{row.id}</td>
+                      <td className={s.modelCell}>{row.modelName}</td>
+                      <td className={s.timestampCell}>{formatTimestamp(row.updatedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className={s.empty}>{emptyStateMessage}</p>
+          )}
         </div>
       </div>
     </Canvas>
