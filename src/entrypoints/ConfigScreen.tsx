@@ -282,6 +282,10 @@ export default function ConfigScreen({ ctx }: Props) {
 
         <div className={s.section}>
           <Section title="Workflow stage menu items">
+            <p className={s.instructions}>
+              Pick a workflow stage, optionally customise its label/icon, then add it. Each saved stage appears in the
+              content sidebar and opens a paginated view of every record currently in that stage.
+            </p>
             {workflowsLoading ? (
               <div className={s.loading}>
                 <Spinner />
